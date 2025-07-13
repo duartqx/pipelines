@@ -19,7 +19,11 @@ type Item = int
 
 
 @dataclass(frozen=True)
-class Context:
+class Context: ...
+
+
+@dataclass(frozen=True)
+class DummyContext(Context):
     uow: str
     data: int
 
@@ -72,11 +76,11 @@ class ItemCollection(PCollection[Item]):
             yield val
 
 
-class Pipeline[T]:
+class Pipeline[T, C: Context]:
     def __init__(
         self,
         name: str,
-        ctx: Context,
+        ctx: C,
         collection: Type[PCollection[T]],
         steps: Sequence[PStep],
     ) -> None:
@@ -123,9 +127,9 @@ async def step3(ctx: Context, item: Item) -> Item:
 
 
 async def main():
-    pipeline = Pipeline[Item](
+    pipeline = Pipeline[Item, DummyContext](
         name="pipeline1",
-        ctx=Context(data=1, uow="uow"),
+        ctx=DummyContext(data=1, uow="uow"),
         collection=ItemCollection,
         steps=[
             PStep(name="step1", handler=step1),
