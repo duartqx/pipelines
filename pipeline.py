@@ -28,9 +28,9 @@ class DummyContext(Context):
     data: int
 
 
-class PStep[T]:
+class PStep[T, C: Context]:
     def __init__(
-        self, name: str, handler: Callable[[Context, T], Coroutine[None, None, T]]
+        self, name: str, handler: Callable[[C, T], Coroutine[None, None, T]]
     ) -> None:
         self.name = name
         self.handler = handler
@@ -41,13 +41,13 @@ class PStep[T]:
             "handler": str(self.handler.__name__),
         }
 
-    async def __call__(self, ctx: Context, item: T) -> T:
+    async def __call__(self, ctx: C, item: T) -> T:
         async with SLogger(self.slog()) as slogger:
             return await slogger(await self.handler(ctx, item))
 
 
-class PCollection[T](ABC, SLoggable):
-    def __init__(self, ctx: Context) -> None:
+class PCollection[T, C: Context](ABC, SLoggable):
+    def __init__(self, ctx: C) -> None:
         self.ctx = ctx
 
     def slog(self) -> Slog:
@@ -69,7 +69,7 @@ class PCollection[T](ABC, SLoggable):
             yield val
 
 
-class ItemCollection(PCollection[Item]):
+class ItemCollection(PCollection[Item, Context]):
     @override
     async def sequence(self) -> AsyncIterator[Item]:
         for val in [2, 3, 10, 4, 5, 1, 3, 12, -33, 8, 4, 2, -11]:
@@ -81,7 +81,7 @@ class Pipeline[T, C: Context]:
         self,
         name: str,
         ctx: C,
-        collection: Type[PCollection[T]],
+        collection: Type[PCollection[T, C]],
         steps: Sequence[PStep],
     ) -> None:
         self.name = name
