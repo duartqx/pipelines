@@ -7,29 +7,21 @@ from typing import (
     AsyncIterator,
     Callable,
     Coroutine,
-    Protocol,
     Sequence,
     Type,
 )
 from typing_extensions import override
 
-from logger import SLogger
+from logger import SLogger, SLoggable, Slog
 
 
 type Item = int
-
-type Slog = dict[str, str]
 
 
 @dataclass(frozen=True)
 class Context:
     uow: str
     data: int
-
-
-class SLoggable(Protocol):
-    @abstractmethod
-    def slog(self) -> Slog: ...
 
 
 class PStep[T]:

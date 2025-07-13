@@ -1,11 +1,12 @@
+from abc import abstractmethod
 from datetime import datetime
 
 import json
 import logging
 import sys
-from typing import Any, Literal, Self
+from typing import Any, Literal, Protocol, Self
 
-__all__ = ["SLogger"]
+__all__ = ["SLogger", "SLoggable", "Slog"]
 
 
 class ISOFormatter(logging.Formatter):
@@ -27,6 +28,13 @@ def get_logger() -> logging.Logger:
 
 
 logger = get_logger()
+
+type Slog = dict[str, str]
+
+
+class SLoggable(Protocol):
+    @abstractmethod
+    def slog(self) -> Slog: ...
 
 
 class SLogger[T]:
