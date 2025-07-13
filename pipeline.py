@@ -1,14 +1,15 @@
+import asyncio
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-
 from typing import (
     AsyncIterator,
     Callable,
     Coroutine,
+    Sequence,
     Type,
     cast,
 )
-import asyncio
 from typing_extensions import override
 
 from logger import slogger
@@ -78,7 +79,7 @@ class Pipeline[T]:
         name: str,
         ctx: Context,
         collection: Type[PCollection[T]],
-        steps: list[PStep],
+        steps: Sequence[PStep],
     ) -> None:
         self.name = name
         self.ctx = ctx
