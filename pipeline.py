@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from typing import (
+    Any,
     AsyncIterator,
     Callable,
     Coroutine,
@@ -14,18 +15,27 @@ from typing_extensions import override
 
 from logger import SLogger, SLoggable, Slog
 
-
 type Item = int
 
 
 @dataclass(frozen=True)
-class Context: ...
+class Context:
+    slogger: SLogger
 
 
 @dataclass(frozen=True)
 class DummyContext(Context):
     uow: str
     data: int
+
+
+@dataclass(frozen=True)
+class StepResult[T]:
+    item: T
+    result: Any
+    success: bool
+    exc: Exception | None
+    step: str
 
 
 class PStep[T, C: Context]:
@@ -42,7 +52,7 @@ class PStep[T, C: Context]:
         }
 
     async def __call__(self, ctx: C, item: T) -> T:
-        async with SLogger(self.slog()) as slogger:
+        async with await ctx.slogger(self.slog()) as slogger:
             return await slogger(await self.handler(ctx, item))
 
 
@@ -54,11 +64,9 @@ class PCollection[T, C: Context](ABC, SLoggable):
         return {"collection": self.__class__.__name__}
 
     def __aiter__(self) -> AsyncIterator[T]:
-        slogger = SLogger(self.slog(), skip_enter=True)
-
         async def _() -> AsyncIterator[T]:
-            async for item in self.sequence():
-                async with slogger:
+            async with await self.ctx.slogger(self.slog()) as slogger:
+                async for item in self.sequence():
                     yield await slogger(item)
 
         return _()
@@ -76,12 +84,12 @@ class ItemCollection(PCollection[Item, Context]):
             yield val
 
 
-class Pipeline[T, C: Context]:
+class Pipeline[PC: PCollection, T, C]:
     def __init__(
         self,
         name: str,
         ctx: C,
-        collection: Type[PCollection[T, C]],
+        collection: Type[PC],
         steps: Sequence[PStep],
     ) -> None:
         self.name = name
@@ -89,24 +97,47 @@ class Pipeline[T, C: Context]:
         self.collection = collection
         self.steps = steps
 
-    def __aiter__(self) -> AsyncIterator[T]:
-        async def generator() -> AsyncIterator[T]:
-            for result in await asyncio.gather(
-                *[self.apply(item) async for item in self.collection(ctx=self.ctx)],
-                return_exceptions=True,
-            ):
-                if not isinstance(result, BaseException):
-                    yield result
+    def __aiter__(self) -> AsyncIterator[StepResult[T]]:
+        async def generator() -> AsyncIterator[StepResult[T]]:
+            # fmt: off
+            tasks = [
+                self.apply(item)
+                async for item in self.collection(ctx=self.ctx)
+            ]
+            # fmt: on
+
+            async for aresult in asyncio.as_completed(tasks):
+                yield await aresult
 
         return generator()
 
-    async def apply(self, item: T) -> T:
-        result = item
-        for step in self.steps:
-            result = await step(self.ctx, result)
-        return result
+    async def apply(self, item: T) -> StepResult[T]:
 
-    async def result(self) -> list[T]:
+        result = item
+
+        step = lambda: ...
+
+        try:
+            for step in self.steps:
+                result = await step(self.ctx, result)
+
+            return StepResult[T](
+                item=item,
+                result=result,
+                success=True,
+                exc=None,
+                step="__all__",
+            )
+        except Exception as e:
+            return StepResult[T](
+                item=item,
+                result=None,
+                success=True,
+                exc=e,
+                step=getattr(step, "name", "__unkown__"),
+            )
+
+    async def result(self) -> list[StepResult[T]]:
         return [item async for item in self]
 
 
@@ -127,9 +158,9 @@ async def step3(ctx: Context, item: Item) -> Item:
 
 
 async def main():
-    pipeline = Pipeline[Item, DummyContext](
+    pipeline = Pipeline[ItemCollection, Item, DummyContext](
         name="pipeline1",
-        ctx=DummyContext(data=1, uow="uow"),
+        ctx=DummyContext(slogger=SLogger(), data=1, uow="uow"),
         collection=ItemCollection,
         steps=[
             PStep(name="step1", handler=step1),
